@@ -1,0 +1,22 @@
+mc_decompiled/.knowledge/ — cross-cutting knowledge about decompiled Minecraft.
+Plain text only, not markdown.
+
+Use this (instead of .index/) for findings NOT tied to a single class:
+rendering pipeline, codecs/serialization, registry/datagen flows, mixin
+injection patterns, version 26.2 quirks, etc.
+
+Convention
+----------
+One topic per file:  .knowledge/{topic}.txt
+  e.g. .knowledge/rendering-pipeline.txt
+       .knowledge/codecs.txt
+       .knowledge/registries.txt
+
+Rules
+-----
+- Add a line only after verifying it in mc_decompiled/sources/26.2/common_src|client_src/.
+  (Existing notes stamped "26.2-pre-2" were verified against the pre-release; re-verify
+  against 26.2 before relying on them.)
+- Terse, plain text. One topic per file.
+- Mojang mappings only; never Yarn; don't mix namespaces.
+- Note the verifying class/method so the fact can be re-checked later.

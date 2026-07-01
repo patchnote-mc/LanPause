@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "lanpause",
+  "version": "${version}",
+  "name": "LAN Pause",
+  "description": "Client-side Fabric mod for Minecraft.",
+  "authors": [
+    "Me!"
+  ],
+  "contact": {
+    "homepage": "https://fabricmc.net/",
+    "sources": "https://github.com/FabricMC/fabric-example-mod"
+  },
+  "license": "CC0-1.0",
+  "icon": "assets/lanpause/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.patchnote.lanpause.client.LanPauseClient"
+    ],
+    "modmenu": [
+      "com.patchnote.lanpause.client.config.ModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "lanpause.mixins.json",
+    {
+      "config": "lanpause.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.2-",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

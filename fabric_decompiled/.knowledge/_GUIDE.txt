@@ -1,0 +1,19 @@
+fabric_decompiled/.knowledge/ — cross-cutting knowledge about Fabric API/Loader.
+Plain text only, not markdown.
+
+Use this (instead of .index/) for findings NOT tied to a single class:
+event/callback patterns, entrypoint wiring, datagen providers flow, registry
+helpers, lookup API, version 0.153.0+26.2 quirks, etc.
+
+Convention
+----------
+One topic per file:  .knowledge/{topic}.txt
+  e.g. .knowledge/events.txt
+       .knowledge/datagen.txt
+       .knowledge/entrypoints.txt
+
+Rules
+-----
+- Add a line only after verifying it in fabric_decompiled/src/.
+- Terse, plain text. One topic per file.
+- Note the verifying class/module so the fact can be re-checked later.

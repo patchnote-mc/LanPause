@@ -1,0 +1,48 @@
+Custom particle + HUD-element API (MC 26.2 client + Fabric API 0.153.0+26.2).
+Verified 2026-06-27.
+
+NOTE: MC 26.2 renamed ResourceLocation -> net.minecraft.resources.Identifier
+  (Identifier.fromNamespaceAndPath(ns,path), Identifier.withDefaultNamespace(path), Identifier.parse).
+
+PARTICLE TYPE + REGISTRATION
+- SimpleParticleType ctor is protected; create via FabricParticleTypes.simple()
+  (net.fabricmc.fabric.api.particle.v1.FabricParticleTypes).
+- Register type: Registry.register(BuiltInRegistries.PARTICLE_TYPE, Identifier, type).
+- Built-in registries are still UNFROZEN during client entrypoint (onInitializeClient).
+  Fabric freezes them later in Minecraft.<init> (fabric registry-sync client MinecraftMixin
+  "afterModInit", injected at Thread.currentThread() in <init>). So a client-only mod can
+  register particle TYPES from onInitializeClient — no main/common entrypoint required.
+
+CLIENT FACTORY
+- ParticleProviderRegistry.getInstance().register(type, PendingParticleProvider)
+  (net.fabricmc.fabric.api.client.particle.v1). PendingParticleProvider.create(FabricSpriteSet)
+  returns ParticleProvider<T>. FabricSpriteSet extends net.minecraft.client.particle.SpriteSet.
+- ParticleProvider<T>.createParticle(T, ClientLevel, x,y,z, xa,ya,za, RandomSource) -> Particle.
+
+PARTICLE CLASS (26.2 render model changed)
+- Base: SingleQuadParticle; abstract getLayer() returns SingleQuadParticle.Layer (OPAQUE/TRANSLUCENT/...
+  on LOCATION_PARTICLES). getGroup() returns ParticleRenderType.SINGLE_QUADS.
+  ParticleRenderType only has SINGLE_QUADS/ITEM_PICKUP/ELDER_GUARDIANS/NO_RENDER now
+  (no PARTICLE_SHEET_TRANSLUCENT). There is NO TextureSheetParticle.
+- Convenient base: SimpleAnimatedParticle extends SingleQuadParticle; ctor
+  (ClientLevel,x,y,z, SpriteSet sprites, float gravity); getLayer()=TRANSLUCENT; its tick()
+  does setSpriteFromAge + alpha fade over the second half of lifetime. Mirror EndRodParticle.
+- Sprite mapping JSON: assets/<modid>/particles/<name>.json -> {"textures":["<modid>:<name>"]},
+  sprite at assets/<modid>/textures/particle/<name>.png. Dir is "particles/", key "textures".
+- Spawn: ClientLevel.addParticle(ParticleOptions, x,y,z, vx,vy,vz).
+
+HUD ELEMENTS (Fabric rendering-v1, net.fabricmc.fabric.api.client.rendering.v1.hud)
+- HudElement: void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker dt).
+- HudElementRegistry.attachElementBefore/After(Identifier anchor, Identifier id, HudElement) /
+  addFirst/addLast(Identifier, HudElement). VanillaHudElements.CROSSHAIR/HOTBAR/... are Identifiers.
+- GuiGraphicsExtractor: guiWidth()/guiHeight(); fill(int x0,y0,x1,y1, int argb); pose() (Matrix3x2fStack);
+  blit/blitSprite/text/item available. ARGB int color (alpha in top byte).
+
+EVENTS
+- UseEntityCallback.EVENT (net.fabricmc.fabric.api.event.player) — the one VisualSwap uses:
+  InteractionResult interact(Player, Level, InteractionHand, Entity, @Nullable EntityHitResult).
+  Fires on right-click ("use") of an entity, BEFORE the spectator check (guard game mode if needed).
+  Return InteractionResult.PASS to not interfere. Fires during handleKeybinds (client).
+- AttackEntityCallback.EVENT (same package, same interact signature): the left-click/attack
+  counterpart. Return InteractionResult.PASS to not interfere. Fires during handleKeybinds (client).
+- ClientTickEvents.END_CLIENT_TICK.register(client -> ...) (EndTick.onEndTick(Minecraft)).

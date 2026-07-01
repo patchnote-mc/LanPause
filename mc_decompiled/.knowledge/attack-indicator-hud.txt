@@ -1,0 +1,32 @@
+Vanilla attack-indicator ("sword charge / fill bar") HUD + its reset-on-swap mechanic (MC 26.2, Mojang mappings).
+Verified 2026-06-29 against mc_decompiled/sources/26.2. Relevant because VisualSwap's SwapHitGlyph draws near the
+crosshair and reacts to held-item swaps — the exact action that empties this bar.
+
+WHAT THE FILL BAR IS
+- The "loading animation" under the crosshair is the vanilla attack-strength indicator. Fill =
+  getAttackStrengthScale(partialTick) = clamp(attackStrengthTicker / getCurrentItemAttackStrengthDelay, 0, 1)
+  (common_src/.../world/entity/player/Player.java:1709-1714).
+- attackStrengthTicker increments once per Player.tick() (Player.java:262). NOT a per-render value.
+
+CROSSHAIR-MODE RENDERING (client_src/.../client/gui/Hud.java extractCrosshair, ~474-506)
+- Only when options.attackIndicator().get() == AttackIndicatorStatus.CROSSHAIR and first-person.
+- Origin: x = guiWidth/2 - 8 ; y = guiHeight/2 - 7 + 16 (= H/2 + 9).
+- Charging (scale < 1.0): background sprite 16x4 then progress sprite blitted width = (int)(scale*17), height 4.
+  => the FILL BAR occupies y in [H/2+9 .. H/2+13), x in [W/2-8 .. W/2+8).
+- Fully charged on an in-range LivingEntity (renderMaxAttackIndicator): 16x16 "full" diamond at same x,y
+  => occupies y in [H/2+9 .. H/2+25).
+- HOTBAR-mode indicator sprites (HOTBAR_ATTACK_INDICATOR_*) draw beside the hotbar instead; same scale value.
+
+RESET-ON-SWAP (the usual reason the bar "looks broken")
+- Player.tick() (Player.java:262-270): each tick, if getMainHandItem() != lastItemInMainHand AND
+  !ItemStack.isSameItem(old,new) -> resetAttackStrengthTicker() (sets attackStrengthTicker=0 and itemSwapTicker=0,
+  Player.java:1721-1724). So switching to a DIFFERENT item empties the fill bar and it recharges from 0. Pure vanilla,
+  in common_src (server+client). Same-item count/NBT changes do NOT reset (isSameItem guard).
+- Other resets: attacking (onAttack -> resetOnlyAttackStrengthTicker, Player.java:1727-1734), a MISS swing
+  (Minecraft.java:1672), MultiPlayerGameMode attack/interact (276, 455).
+
+IMPLICATION FOR VISUALSWAP
+- VisualSwap NEVER reads/writes attackStrengthTicker, never calls reset*, and has no mixins -> it cannot change the
+  fill bar's percentage. SwapHitGlyph (7x7 @ SCALE=1, CENTER_GAP=20) draws at y [H/2+17 .. H/2+24]: ~4px BELOW the
+  charging bar (no overlap); overlaps only the lower half of the 16x16 full-charge diamond. The bar emptying right as
+  the glyph appears is the vanilla reset-on-swap above, not the mod.

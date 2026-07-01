@@ -1,0 +1,17 @@
+net.minecraft.client.gui.GuiGraphicsExtractor (26.2) — HUD draw target passed to HudElement.extractRenderState and to Hud.extractSlot.
+
+Verified members (client_src):
+- int guiWidth() / int guiHeight()
+- void fill(int x0,int y0,int x1,int y1,int col)            // ARGB; default GUI pipeline
+- void fill(RenderPipeline p,int x0,int y0,int x1,int y1,int col)
+- void fillGradient(int x0,int y0,int x1,int y1,int col1,int col2)
+- void outline(int x,int y,int w,int h,int color)          // 1px border box
+- void horizontalLine / verticalLine(...)
+- void text(Font font,String str,int x,int y,int color)               // +overload (..., boolean dropShadow)
+- void text(Font font,Component/FormattedCharSequence str,int x,int y,int color[,dropShadow])
+- void centeredText(Font font,String/Component/FormattedCharSequence str,int x,int y,int color)
+- void textWithBackdrop / textWithWordWrap(...)
+- void blit / blitSprite / item / fakeItem(...)
+
+Font: get via Minecraft.getInstance().font (public field). font.lineHeight ~= 9, font.width(str).
+Used by: SwapHitGlyph (HudElement), HudHotbarHighlightMixin (Hud.extractSlot @HEAD), SwapHotbarHighlight.

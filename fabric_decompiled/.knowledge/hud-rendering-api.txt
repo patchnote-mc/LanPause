@@ -1,0 +1,30 @@
+Fabric HUD rendering API (fabric-api 0.150.1+26.2, module fabric-rendering-v1)
+Verified in fabric_decompiled/src/fabric-rendering-v1 on 2026-06-03.
+
+Prefer this over mixing into net.minecraft.client.gui.Hud for custom HUD overlays.
+
+package net.fabricmc.fabric.api.client.rendering.v1.hud
+
+interface HudElement {
+  void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker);
+}
+
+interface HudElementRegistry (static methods):
+  addFirst(Identifier id, HudElement)            - very front
+  addLast(Identifier id, HudElement)             - very end (no vanilla render condition)
+  attachElementBefore(Identifier before, Identifier id, HudElement)
+  attachElementAfter(Identifier after, Identifier id, HudElement)  <- inherits the
+     anchored vanilla element's render condition (e.g. Hud.isHidden()).
+  removeElement(Identifier) / replaceElement(Identifier, Function<HudElement,HudElement>)
+
+VanillaHudElements: Identifier constants for anchoring. Notable:
+  HOTBAR ("hotbar"). attachElementAfter(VanillaHudElements.HOTBAR, ...) draws on TOP of the
+  hotbar (items + selection box) -> good for overlays that must not be redrawn over.
+  Others: MISC_OVERLAYS, CROSSHAIR, EXPERIENCE_LEVEL, BOSS_BAR, CHAT, SUBTITLES, ...
+
+Usage in this repo: AttributeSwapFixesClient.onInitializeClient ->
+  HudElementRegistry.attachElementAfter(VanillaHudElements.HOTBAR,
+     Identifier "attribute-swap-fixes:grace_window", new GraceHudElement()).
+The element gets the same GuiGraphicsExtractor + DeltaTracker a Hud mixin would; read the
+player via Minecraft.getInstance().player. Sprite tinting: blitSprite(RenderPipelines
+.GUI_TEXTURED, Identifier, x,y,w,h, int argbColor); plain fill via graphics.fill(...).

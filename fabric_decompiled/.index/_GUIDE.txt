@@ -1,0 +1,40 @@
+fabric_decompiled/.index/ — class index for the Fabric API / Loader sources.
+Plain text only, not markdown.
+
+Source of truth being indexed (active version = 0.153.0+26.2):
+  fabric_decompiled/src/  (git submodule of fabric-api @ tag 0.153.0+26.2;
+  init via fabric_decompiled/setup.sh)
+
+The 0.150.1+26.2/ index dir is kept as a HISTORICAL reference. Index notes for
+0.153.0+26.2 start fresh under 0.153.0+26.2/ as they are re-verified.
+
+Convention
+----------
+One flat file per inspected class, named by the fully-qualified class name:
+  .index/{version}/{fully.qualified.ClassName}.txt
+  version = 0.153.0+26.2
+  e.g. net.fabricmc.fabric.api.datagen.v1.DataGeneratorEntrypoint
+    -> .index/0.153.0+26.2/net.fabricmc.fabric.api.datagen.v1.DataGeneratorEntrypoint.txt
+No package subdirectories under the version segment.
+
+What to record (only after verifying in source)
+------------------------------------------------
+- First line: `FQCN: {fully.qualified.ClassName}` plus the module it lives in
+  (the fabric-* dir).
+- The exact method/field signatures you actually used.
+- A one-line behavior note only when non-obvious.
+
+NO date stamp is required on these decompiled entries — they track an immutable
+pinned version (0.153.0+26.2), so they don't go stale the way this repo's own
+code does. (Only the repo's own .index/ entries carry an `Updated: YYYY-MM-DD`
+line.) A `Verified against fabric_decompiled/src on YYYY-MM-DD` line is fine but
+optional.
+
+Rules
+-----
+- Add a line only after verifying it in fabric_decompiled/src/.
+- Keep entries terse. Plain text, not markdown.
+- Don't index speculatively — record what you looked up, nothing more.
+
+For findings not tied to one class, use
+fabric_decompiled/.knowledge/{topic}.txt (see that dir's _GUIDE.txt).

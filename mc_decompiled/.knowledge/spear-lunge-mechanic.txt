@@ -1,0 +1,54 @@
+Spear weapon + Lunge enchantment + their attribute-swap relevance (MC 26.2, Mojang mappings).
+Verified 2026-06-29 against mc_decompiled/sources/26.2. Full write-up: .llm/implementation/attribute-swapping.md.
+
+SPEAR ITEM
+- No SpearItem class. Built via Item.Properties.spear() (Item.java:503; components set at :504).
+  Registered WOODEN_SPEAR..NETHERITE_SPEAR in Items.java.
+- Components from spear(): DataComponents.PIERCING_WEAPON (instant jab/stab), KINETIC_WEAPON (charge attack),
+  ATTACK_RANGE (reach), SWING_ANIMATION=SwingAnimationType.STAB, ItemAttributeModifiers (ATTACK_DAMAGE/SPEED MAINHAND).
+- Client "is spear" test = stack.get(DataComponents.PIERCING_WEAPON)!=null (vanilla does this at Minecraft.java:1645;
+  also SpearAnimations.java uses KINETIC_WEAPON). Prefer component test over item-id list.
+
+TWO ATTACKS (only the JAB is attribute-swap-vulnerable)
+- JAB / STAB = PiercingWeapon. PiercingWeapon.attack() (PiercingWeapon.java:69-84) reads
+  attacker.getAttributeValue(Attributes.ATTACK_DAMAGE) LIVE at :70 -> swap-vulnerable. POST_PIERCING_ATTACK
+  effects run after at :78. Server packet handler ServerGamePacketListenerImpl.handlePlayerAction :1232-1253.
+- CHARGE = KineticWeapon. KineticWeapon.damageEntities() (KineticWeapon.java:68-106) reads
+  getAttributeBaseValue(ATTACK_DAMAGE) at :78 = BASE only, NOT swap-vulnerable;
+  damage = base + floor(relativeSpeed*damageMultiplier) (:96). Applied via ItemStack.onUseTick() (ItemStack.java:1053-1064).
+
+CLIENT INPUT PATH (jab + lunge are client-predicted)
+- keyAttack -> Minecraft.startAttack() (1613-1677). If heldItem.get(DataComponents.PIERCING_WEAPON)!=null (:1645)
+  -> gameMode.piercingAttack(weapon)+swing+return (1646-1650). NO entity/block hit needed (jab fires at air).
+- MultiPlayerGameMode.piercingAttack(weapon) (529-535): ensureHasSentCarriedItem; send
+  ServerboundPlayerActionPacket(Action.STAB,ZERO,DOWN) (:531); player.onAttack() (:532);
+  player.postPiercingAttack() (:533) <-- LUNGE applied CLIENT-SIDE here; weapon.makeSound (:534).
+- So: spear jab/lunge is driven by keyAttack and observable client-side without the server.
+
+LUNGE ENCHANTMENT
+- Enchantments.LUNGE (Enchantments.java:136, registered :181); id `lunge`; tag ItemTags.LUNGE_ENCHANTABLE; spear-only; max III.
+- Pure EnchantmentEffectComponents.POST_PIERCING_ATTACK effect (EnchantmentEffectComponents.java:41). NO keybind;
+  auto-fires after a jab. Effects: ApplyEntityImpulse perLevel(0.458)=dash, ApplyExhaustion perLevel(4.0),
+  ChangeItemDamage 1, PlaySoundEffect LUNGE_1/2/3. Conditions: not vehicle/fall-flying/water; player food>=7
+  (non-player/creative bypass).
+- Trigger chain: PiercingWeapon.attack -> LivingEntity.postPiercingAttack() (1594-1600) ->
+  EnchantmentHelper.doPostPiercingAttackEffects (217-218) -> Enchantment.doPostPiercingAttack (279).
+- Client "has lunge" test = EnchantmentHelper.getItemEnchantmentLevel(lungeHolder, stack)>0 (enchantments ARE
+  readable on the local client stack, unlike attributes).
+
+DETECTION NOTES (for VisualSwap)
+- Spear attribute swap = swap to (lunge) spear from a high-ATTACK_DAMAGE item + keyAttack same tick -> big jab + lunge.
+- Lunge swapping (community cooldown skip) = toggle spear<->EMPTY slot rapidly to reset attack cooldown.
+  FIXED 2026-06-29: VisualSwapClient now opens the window on ANY !ItemStack.isSameItem main-hand change
+  (incl. to/from empty), no clear-on-empty -> glyph shows on lunge swaps. Also registers AttackEntityCallback
+  (melee swap-hit is an attack) alongside UseEntityCallback. A spear jab into air has no entity target -> glyph only.
+- SPEAR JAB DETECTION (why it was flaky): the jab takes a special branch in Minecraft.startAttack() (1646-1650):
+  if heldItem has PIERCING_WEAPON -> gameMode.piercingAttack()+return, so it NEVER reaches gameMode.attack() ->
+  AttackEntityCallback does NOT fire for a jab. It's also a fast sub-tick click that once/tick keyAttack.isDown()
+  edge sampling misses intermittently. FIX 2026-06-29: detect the swing the jab always raises (player.swing(),
+  Minecraft.java:1648). LivingEntity.swinging(:262)+swingTime(:265) are public; swingStarted =
+  swinging && (!wasSwinging || swingTime<prevSwingTime). swing persists ~getCurrentSwingDuration ticks so it
+  survives the tick boundary. onClick gates it to the swap window. Also onClick now flashes iff possible THIS
+  tick or last tick (same-tick swap+attack = the real exploit).
+- Do NOT read ATTACK_DAMAGE client-side: it is not syncable (Attributes.java:18) and the client never reconciles
+  held-item modifiers (LivingEntity.onEquipItem returns early client-side :680). Detect via inputs+items only.

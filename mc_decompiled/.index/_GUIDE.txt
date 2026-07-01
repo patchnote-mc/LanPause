@@ -1,0 +1,42 @@
+mc_decompiled/.index/ — class index for the decompiled Minecraft sources.
+Plain text only, not markdown.
+
+Source of truth being indexed (active version = 26.2):
+  mc_decompiled/sources/26.2/common_src/  and  mc_decompiled/sources/26.2/client_src/
+  (CFR-decompiled MC 26.2; gitignored, regen via mc_decompiled/setup.sh 26.2)
+
+The 26.2-pre-2/ index dir is kept as a HISTORICAL reference (notes verified
+against the pre-release). Index notes for the 26.2 release start fresh under
+26.2/ as they are re-verified — don't assume a pre-2 note still holds.
+
+Convention
+----------
+One flat file per inspected class, named by the fully-qualified class name:
+  .index/{version}/{fully.qualified.ClassName}.txt
+  version = 26.2
+  e.g. net.minecraft.client.MinecraftClient
+    -> .index/26.2/net.minecraft.client.MinecraftClient.txt
+No package subdirectories under the version segment.
+
+What to record (only after verifying in source)
+------------------------------------------------
+- First line: `FQCN: {fully.qualified.ClassName}` (add ` (client)` for
+  client-only classes, or e.g. ` (extends LivingEntity)` when useful).
+- The exact Mojang-mapped method/field signatures you actually used.
+- A one-line behavior note only when non-obvious.
+
+NO date stamp is required on these decompiled entries — they track an immutable
+pinned version (26.2), so they don't go stale the way this repo's own code
+does. (Only the repo's own .index/ entries carry an `Updated: YYYY-MM-DD` line.)
+If you want to note when you checked, a `Verified against {common,client}_src on
+YYYY-MM-DD` line is fine but optional.
+
+Rules
+-----
+- Add a line only after verifying it in common_src/ or client_src/.
+- Keep entries terse. Plain text, not markdown.
+- Match Mojang mappings exactly; never record Yarn names; don't mix namespaces.
+- Don't index speculatively — record what you looked up, nothing more.
+
+For findings not tied to one class, use mc_decompiled/.knowledge/{topic}.txt
+instead (see that dir's _GUIDE.txt).

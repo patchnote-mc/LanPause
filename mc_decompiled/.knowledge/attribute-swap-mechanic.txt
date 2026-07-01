@@ -1,0 +1,59 @@
+Attribute-swap ("swap hit") mechanic + client detection facts (MC 26.2, Mojang mappings).
+Verified 2026-06-27 against mc_decompiled/sources/26.2 (re-verified 2026-06-29: line refs below confirmed).
+SPEAR / LUNGE variant: see spear-lunge-mechanic.txt. Full reference: .llm/implementation/attribute-swapping.md.
+Version status: attribute swapping removed in 26.2-pre2, re-added in 26.2-pre3 (intended to be fixed later) -> live in 26.2.
+
+THE BUG
+- LivingEntity.tick() (common_src/.../world/entity/LivingEntity.java:2603) calls
+  detectEquipmentUpdates() at line 2628 — but that line is INSIDE
+  `if (!this.level().isClientSide())` (block opens 2607, closes ~2635). So held-item
+  attribute modifiers are applied/removed ONLY server-side, once per tick, via
+  collectEquipmentChanges() -> AttributeInstance.removeModifier/addTransientModifier (2783-2789).
+- Player.attack(Entity) reads damage live from getAttributeValue(Attributes.ATTACK_DAMAGE).
+- => Swapping the held item and attacking within the same tick lands the attack on the
+  PREVIOUS item's attribute snapshot (the once-per-tick update hasn't run yet).
+
+CLIENT IMPLICATIONS (why we DON'T read the live client attribute)
+- Because detectEquipmentUpdates is server-only, the client's AttributeMap is NOT updated
+  locally on swap — it only changes when the server syncs (ping-dependent). Reading the live
+  client ATTACK_DAMAGE to detect staleness is therefore unreliable. Rejected.
+
+CLIENT TICK / INPUT ORDER (client_src/.../client/Minecraft.java)
+- tick() (1745): handleKeybinds() (1769) runs BEFORE level.tickEntities() (1779). So the
+  player entity (and any equipment update) ticks AFTER input each client tick.
+- handleKeybinds() (1840): hotbar selection setSelectedSlot(i) (1854-1867) runs BEFORE the
+  attack keyAttack->startAttack() (1899-1901). So on a same-tick swap+attack, getMainHandItem()
+  already returns the NEW item when the attack fires.
+- startAttack() (1613) -> gameMode.attack(player, entity) (MultiPlayerGameMode.attack, 451);
+  Fabric AttackEntityCallback fires there (fabric MultiPlayerGameModeMixin), synchronously
+  during handleKeybinds (before tickEntities).
+- Fabric ClientTickEvents.END_CLIENT_TICK fires at end of Minecraft.tick(), AFTER handleKeybinds
+  and tickEntities — good place to snapshot "previous tick" held item.
+
+=> Visual Swap (as of 2026-06-29) no longer reads attributes at all. It uses a swap WINDOW.
+   The effect is SAME-TICK (1-tick reconciliation lag: getMainHandItem flips immediately but
+   detectEquipmentUpdates reapplies ATTACK_DAMAGE only on the next entity tick; Player.tick's
+   lastItemInMainHand/itemSwapTicker reset is likewise once/tick). The client observes the swap at
+   end-of-tick, so SwapWindow.WINDOW_TICKS=2 (1-tick lag + 1-tick observation).
+   GLYPH STATE MACHINE (SwapWindow, recreated 2026-06-29):
+     - A main-hand item change opens the POSSIBLE window (WINDOW_TICKS=2). While open the HUD glyph
+       shows the "possible" mask (default). Glyph is only on screen while possible OR a flash runs.
+     - A click = ATTACK or USE key rising edge (client.options.keyAttack/keyUse.isDown()). On a click,
+       SwapWindow.onClick fires the "attacked" mask IFF possibleLastTick (the window was open in the
+       PREVIOUS tick — "clicked and isPossible was true last tick"). The attacked variant shows as a
+       FLASH_TICKS=5 (~250ms) flash, then reverts to possible.
+     - endTick(tick) must run once per tick (snapshots possible(tick) into possibleLastTick).
+     - using on an entity during the possible window (UseEntityCallback) spawns the burst; that callback
+       runs in handleKeybinds BEFORE END_CLIENT_TICK, so it checks the swap LIVE (switchedThisTick ||
+       swapWindow.possible) rather than the flash, which this tick's click hasn't set yet.
+   Window clock = player.tickCount. The facts above still explain WHY same-tick swap+attack is the real
+   exploit (handleKeybinds order + server-only equipment update), which the window approximates client-side.
+
+ATTRIBUTE / ITEM APIS
+- Attributes.ATTACK_DAMAGE / ATTACK_SPEED : Holder<Attribute> (common_src/.../ai/attributes/Attributes.java:18-20).
+- ItemStack.forEachModifier(EquipmentSlot, BiConsumer<Holder<Attribute>, AttributeModifier>)
+  (ItemStack.java:974) — also folds in EnchantmentHelper modifiers.
+- AttributeModifier record: id() Identifier, amount() double, operation() Operation
+  {ADD_VALUE, ADD_MULTIPLIED_BASE, ADD_MULTIPLIED_TOTAL}.
+- Item.BASE_ATTACK_DAMAGE_ID / BASE_ATTACK_SPEED_ID = Identifier.withDefaultNamespace(...).
+- ItemStack.matches(a,b) compares item+count+components (used for swap detection).
