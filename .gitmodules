@@ -4,3 +4,4 @@
 [submodule "mc_decompiled/sources/26.2"]
 	path = mc_decompiled/sources/26.2
 	url = git@github-patch:patchnote-mc/mc_decompiled.git
+	branch = 26.2
