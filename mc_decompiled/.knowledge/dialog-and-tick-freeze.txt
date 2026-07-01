@@ -1,0 +1,58 @@
+TOPIC: Server-driven Dialog voting + tick-freeze player exemption (MC 26.2)
+Verified against decompiled sources 2026-07-01. Used by the LanPause mod.
+
+=== TICK FREEZE / PLAYER EXEMPTION ===
+net.minecraft.world.TickRateManager (common):
+  protected boolean isFrozen; protected boolean runGameElements;
+  public boolean runsNormally()  -> returns runGameElements
+  public void setFrozen(boolean)
+  public boolean isEntityFrozen(Entity e):
+      return !runsNormally() && !(e instanceof Player) && e.countPlayerPassengers() <= 0;
+  -> The `!(e instanceof Player)` clause is why players stay mobile during /tick freeze.
+     tick() sets: runGameElements = !isFrozen || frozenTicksToRun > 0.
+net.minecraft.server.ServerTickRateManager extends TickRateManager (per-MinecraftServer):
+  setFrozen(b) -> super + broadcasts ClientboundTickingStatePacket to ALL clients,
+     so client ClientLevel tick managers also freeze. Get via server.getTickRateManager()
+     (or level.tickRateManager()). To pause: serverTRM.setFrozen(true).
+To freeze players too (mod-gated): @Inject HEAD cancellable on isEntityFrozen; if our
+  freeze flag active && !runGameElements -> setReturnValue(true). Shadow `runGameElements`.
+
+=== DIALOG API (net.minecraft.server.dialog.*) ===
+Best 2-button vote dialog: ConfirmationDialog (record, implements SimpleDialog):
+  ConfirmationDialog(CommonDialogData common, ActionButton yesButton, ActionButton noButton)
+CommonDialogData(Component title, Optional<Component> externalTitle, boolean canCloseWithEscape,
+  boolean pause, DialogAction afterAction, List<DialogBody> body, List<Input> inputs)
+  VALIDATION: if pause==true then afterAction.willUnpause() must be true. So to keep the
+  dialog OPEN after a click use afterAction=DialogAction.NONE and pause=false.
+  canCloseWithEscape=false -> player can't Escape out (input lock).
+DialogAction enum: CLOSE, NONE, WAIT_FOR_RESPONSE. willUnpause() true for CLOSE & WAIT_FOR_RESPONSE.
+  NONE keeps dialog open after action fires.
+ActionButton(CommonButtonData button, Optional<Action> action)
+CommonButtonData(Component label, Optional<Component> tooltip, int width) ; also (label, width). DEFAULT_WIDTH=150.
+Body text: net.minecraft.server.dialog.body.PlainMessage(Component contents, int width) implements DialogBody. DEFAULT_WIDTH=200.
+
+Button custom action -> net.minecraft.server.dialog.action.CustomAll(Identifier id, Optional<CompoundTag> additions) implements Action.
+  On click, serializes to ClickEvent.Custom(id, Optional<Tag>) and client sends
+  ServerboundCustomClickActionPacket(Identifier id, Optional<Tag> payload). additions become the payload tag.
+
+=== SHOW / CLEAR DIALOG SERVER-SIDE ===
+net.minecraft.server.level.ServerPlayer:
+  public void openDialog(Holder<Dialog> dialog)  -> sends ClientboundShowDialogPacket
+  Use Holder.direct(dialogInstance) for an inline dialog (net.minecraft.core.Holder.direct(T)).
+Clear/close a dialog: player.connection.send(ClientboundClearDialogPacket.INSTANCE)
+  (net.minecraft.network.protocol.common.ClientboundClearDialogPacket).
+Pattern mirrors net.minecraft.server.commands.DialogCommand (show/clear).
+
+=== RECEIVE VOTES (no Fabric event exists) ===
+ServerboundCustomClickActionPacket handled in
+  net.minecraft.server.network.ServerCommonPacketListenerImpl.handleCustomClickAction(packet):
+     PacketUtils.ensureRunningOnSameThread(...); this.server.handleCustomClickAction(packet.id(), packet.payload());
+Mixin @Inject at INVOKE of MinecraftServer.handleCustomClickAction (guarantees main thread,
+  past the thread check), cancellable. Cast (Object)this to ServerGamePacketListenerImpl to
+  read `public ServerPlayer player;` (field, line 269). player.getServer() -> MinecraftServer.
+Payload: Optional<Tag>; tag is CompoundTag. CompoundTag.getStringOr(name, def) / putString(name,val).
+
+=== IDENTIFIER / COMPONENTS ===
+26.2 renames ResourceLocation -> net.minecraft.resources.Identifier.
+  Identifier.fromNamespaceAndPath(ns, path). Has Identifier.CODEC / STREAM_CODEC.
+Component.literal(String) / Component.translatable(key, args...).

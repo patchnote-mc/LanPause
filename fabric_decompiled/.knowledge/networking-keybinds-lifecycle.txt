@@ -1,0 +1,36 @@
+TOPIC: Fabric API 0.153.0+26.2 — custom payloads, keybinds, lifecycle/tick, entrypoints
+Verified against fabric_decompiled/src 2026-07-01. Used by the LanPause mod.
+
+=== CUSTOM PAYLOAD NETWORKING ===
+Payload type is net.minecraft.network.protocol.common.custom.CustomPacketPayload:
+  Type<T extends CustomPacketPayload>(Identifier id); interface method: Type<? extends CustomPacketPayload> type();
+Register payload TYPES in COMMON init (runs on both sides):
+  PayloadTypeRegistry.serverboundPlay().register(TYPE, CODEC)   // C2S  (RegistryFriendlyByteBuf)
+  PayloadTypeRegistry.clientboundPlay().register(TYPE, CODEC)   // S2C
+Receivers:
+  ServerPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) -> ...)  // context.player()/server()/responseSender()
+  ClientPlayNetworking.registerGlobalReceiver(TYPE, (payload, context) -> ...)  // context.client()/player()  (client init)
+Send:
+  ClientPlayNetworking.send(payload)                 // C2S
+  ServerPlayNetworking.send(serverPlayer, payload)   // S2C
+Empty payload codec: StreamCodec.unit(new MyPayload()). String codec: ByteBufCodecs.STRING_UTF8; bool: ByteBufCodecs.BOOL.
+  Codec generics: StreamCodec<? super RegistryFriendlyByteBuf, T> (a plain ByteBuf/FriendlyByteBuf codec .cast()s fine).
+NOTE: no Fabric event for Dialog ServerboundCustomClickActionPacket -> use a Minecraft mixin (see dialog knowledge).
+
+=== KEYBINDS (client) ===
+net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper.registerKeyMapping(KeyMapping) : KeyMapping
+new KeyMapping(String translationKey, InputConstants.Type.KEYSYM, int glfwKey, KeyMapping.Category)
+  Categories: KeyMapping.Category.MISC / MULTIPLAYER / ... (record Category(Identifier)).
+  Key codes: com.mojang.blaze3d.platform.InputConstants (KEY_P=80, KEY_SEMICOLON=59, KEY_APOSTROPHE=39...).
+Poll: ClientTickEvents.END_CLIENT_TICK.register(client -> { while (mapping.consumeClick()) {...} })
+  (net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents; EndTick.onEndTick(Minecraft)).
+
+=== SERVER LIFECYCLE / TICK / PLAYERS ===
+ServerLifecycleEvents.SERVER_STARTED / SERVER_STOPPING / SERVER_STOPPED (onServerStarted(MinecraftServer) etc.)
+ServerTickEvents.END_SERVER_TICK.register(server -> ...) ; EndTick.onEndTick(MinecraftServer).
+ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> ...)  // handler.player is ServerPlayer, for late-join sync.
+Players: server.getPlayerList().getPlayers() -> List<ServerPlayer>.
+
+=== ENTRYPOINTS ===
+net.fabricmc.api.ModInitializer#onInitialize()  (common: fabric.mod.json "main")
+net.fabricmc.api.ClientModInitializer#onInitializeClient()  (client)

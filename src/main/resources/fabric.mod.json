@@ -3,7 +3,7 @@
   "id": "lanpause",
   "version": "${version}",
   "name": "LAN Pause",
-  "description": "Client-side Fabric mod for Minecraft.",
+  "description": "Vote-based LAN game pause via tick-freeze and Minecraft dialogs. Required on both server and client.",
   "authors": [
     "Me!"
   ],
@@ -13,8 +13,11 @@
   },
   "license": "CC0-1.0",
   "icon": "assets/lanpause/icon.png",
-  "environment": "client",
+  "environment": "*",
   "entrypoints": {
+    "main": [
+      "com.patchnote.lanpause.LanPauseInit"
+    ],
     "client": [
       "com.patchnote.lanpause.client.LanPauseClient"
     ],

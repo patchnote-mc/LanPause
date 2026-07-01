@@ -1,5 +1,6 @@
 package com.patchnote.lanpause.client.config;
 
+import com.patchnote.lanpause.config.ModConfig;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
 import me.shedaniel.autoconfig.AutoConfigClient;

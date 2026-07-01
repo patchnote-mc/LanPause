@@ -2,7 +2,10 @@
   "required": true,
   "package": "com.patchnote.lanpause.mixin",
   "compatibilityLevel": "JAVA_25",
-  "mixins": [],
+  "mixins": [
+    "TickRateManagerMixin",
+    "ServerCustomClickActionMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },
