@@ -1,6 +1,7 @@
 package com.patchnote.lanpause;
 
 import com.patchnote.lanpause.config.ModConfig;
+import com.patchnote.lanpause.dialog.VotesBody;
 import com.patchnote.lanpause.net.LanPauseNet;
 import com.patchnote.lanpause.net.LanPauseNet.RequestPausePayload;
 import com.patchnote.lanpause.pause.PauseManager;
@@ -22,6 +23,7 @@ public final class LanPauseInit implements ModInitializer
 
         AutoConfig.register(ModConfig.class, Toml4jConfigSerializer::new);
         LanPauseNet.registerTypes();
+        VotesBody.register();
 
         ServerPlayNetworking.registerGlobalReceiver(RequestPausePayload.TYPE, (payload, context) -> {
             PauseManager mgr = PauseManager.get();

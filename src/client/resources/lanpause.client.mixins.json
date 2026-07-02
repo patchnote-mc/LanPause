@@ -2,7 +2,9 @@
   "required": true,
   "package": "com.patchnote.lanpause.client.mixin",
   "compatibilityLevel": "JAVA_25",
-  "client": [],
+  "client": [
+    "DialogBodyHandlersMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },

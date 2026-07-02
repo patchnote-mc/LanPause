@@ -15,6 +15,8 @@ public final class LanPauseNet
     public static final String CHOICE_KEY = "choice";
     public static final String CHOICE_PAUSE = "pause";
     public static final String CHOICE_RESUME = "resume";
+    // A player clicked "Start Resume Vote" on the paused dialog; not a vote, a request to open one.
+    public static final String CHOICE_START_RESUME = "start_resume";
 
     /** C2S: a client pressed the pause keybind and asks the server to start a pause vote. */
     public record RequestPausePayload() implements CustomPacketPayload

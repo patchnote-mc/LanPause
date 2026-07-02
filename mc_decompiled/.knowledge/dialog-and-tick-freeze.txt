@@ -56,3 +56,38 @@ Payload: Optional<Tag>; tag is CompoundTag. CompoundTag.getStringOr(name, def) /
 26.2 renames ResourceLocation -> net.minecraft.resources.Identifier.
   Identifier.fromNamespaceAndPath(ns, path). Has Identifier.CODEC / STREAM_CODEC.
 Component.literal(String) / Component.translatable(key, args...).
+
+=== DIALOG BODY LAYOUT + CUSTOM BODIES (verified 2026-07-02) ===
+Body layout is a single VERTICAL LinearLayout (DialogScreen.init: LinearLayout.vertical().spacing(10),
+  center-aligned). Each DialogBody -> one LayoutElement (one row). NO native table/columns for bodies.
+  MultiActionDialog(common, List<ActionButton>, Optional<ActionButton> exitAction, int columns) -> the
+  `columns` grid applies to ACTION BUTTONS only (packControlsIntoColumns), never to bodies.
+Action button placement: SimpleDialog (ConfirmationDialog yes/no, NoticeDialog single) -> buttons in the
+  FOOTER, below the body (SimpleDialogScreen.updateHeaderAndFooter). ButtonListDialog (MultiActionDialog)
+  -> buttons appended to the BODY bottom. Either way buttons sit below all bodies.
+  NoticeDialog(common, ActionButton) = one-button dialog. ConfirmationDialog(common, yes, no) = two.
+Vanilla bodies: PlainMessage(Component, width) and
+  ItemBody(ItemStackTemplate item, Optional<PlainMessage> description, boolean showDecorations,
+    boolean showTooltip, int width(1-256,def16), int height). showTooltip -> hover shows the item's
+    standard tooltip. With a `description` present, client renders [item][text] horizontally.
+CUSTOM dialog body (used by LanPause VotesBody for a 2-col head grid):
+  1. record X implements net.minecraft.server.dialog.body.DialogBody; provide MapCodec (network-safe
+     codecs only: ComponentSerialization.CODEC, ItemStackTemplate.CODEC.listOf(), Codec.INT...).
+     mapCodec() returns it. Dialogs serialize over the wire via Dialog.STREAM_CODEC ->
+     fromCodecWithRegistriesTrusted(DIRECT_CODEC), dispatched by BuiltInRegistries.DIALOG_BODY_TYPE
+     byNameCodec. So codec-over-buffer; no hand-written StreamCodec needed.
+  2. Register MAP_CODEC in BuiltInRegistries.DIALOG_BODY_TYPE (Registry.register(reg, id, MAP_CODEC))
+     from the COMMON ModInitializer (runs on client too, so client can decode). Mirrors DialogBodyTypes.
+  3. Client render: implement net.minecraft.client.gui.screens.dialog.body.DialogBodyHandler<X>
+     (LayoutElement createControls(DialogScreen<?>, X)). DialogBodyHandlers.HANDLERS is a private static
+     (final) Map and register() is private -> add via client mixin @Inject TAIL into bootstrap(),
+     @Shadow @Final the HANDLERS map and HANDLERS.put(X.MAP_CODEC, new XHandler()).
+  Client layout bits: parent.getFont(); StringWidget(Component, Font); GridLayout (addChild(el,row,col),
+    columnSpacing/rowSpacing, defaultCellSetting().alignHorizontallyCenter()); LinearLayout.horizontal();
+    ItemDisplayWidget(Minecraft, offX, offY, w, h, Component msg, ItemStack, boolean decorations,
+    boolean tooltip).
+PLAYER HEAD item (server-built, renders face + username tooltip):
+  ItemStack s = new ItemStack(Items.PLAYER_HEAD);
+  s.set(DataComponents.PROFILE, ResolvableProfile.createResolved(serverPlayer.getGameProfile())); // face
+  s.set(DataComponents.CUSTOM_NAME, serverPlayer.getName()); // tooltip top line = name
+  ItemStackTemplate.fromStack(s). (Offline/LAN profiles may lack textures -> default skin.)

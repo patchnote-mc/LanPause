@@ -1,5 +1,6 @@
 package com.patchnote.lanpause.pause;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -7,11 +8,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.patchnote.lanpause.config.ModConfig;
+import com.patchnote.lanpause.dialog.VotesBody;
 import com.patchnote.lanpause.net.LanPauseNet;
 import com.patchnote.lanpause.net.LanPauseNet.FreezeSyncPayload;
 
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.ClientboundClearDialogPacket;
@@ -22,11 +25,16 @@ import net.minecraft.server.dialog.CommonDialogData;
 import net.minecraft.server.dialog.ConfirmationDialog;
 import net.minecraft.server.dialog.Dialog;
 import net.minecraft.server.dialog.DialogAction;
+import net.minecraft.server.dialog.NoticeDialog;
 import net.minecraft.server.dialog.action.Action;
 import net.minecraft.server.dialog.action.CustomAll;
 import net.minecraft.server.dialog.body.DialogBody;
 import net.minecraft.server.dialog.body.PlainMessage;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ResolvableProfile;
 
 /**
  * Server-side vote-driven pause state machine. One instance is bound to the running
@@ -52,6 +60,8 @@ public final class PauseManager
     private final Map<UUID, String> votes = new HashMap<>();
     private String initiatorName = "";
     private int ticksRemaining = 0;
+    /** During {@link PausePhase#VOTING}: false = vote to pause (from running), true = vote to resume (from paused). */
+    private boolean resumeVote = false;
 
     private PauseManager(MinecraftServer server) { this.server = server; }
 
@@ -69,6 +79,7 @@ public final class PauseManager
 
         ModConfig cfg = ModConfig.get();
         phase = PausePhase.VOTING;
+        resumeVote = false;
         votes.clear();
         initiatorName = initiator.getName().getString();
         if (cfg.initiatorAutoVotes) votes.put(initiator.getUUID(), LanPauseNet.CHOICE_PAUSE);
@@ -78,17 +89,36 @@ public final class PauseManager
         if (!evaluate()) broadcastDialog();
     }
 
+    /** "Start Resume Vote" was clicked on the paused dialog: open a timed vote to resume. */
+    private void startResumeVote(ServerPlayer initiator)
+    {
+        if (phase != PausePhase.PAUSED) return;
+
+        ModConfig cfg = ModConfig.get();
+        phase = PausePhase.VOTING;
+        resumeVote = true;
+        votes.clear();
+        initiatorName = initiator.getName().getString();
+        if (cfg.initiatorAutoVotes) votes.put(initiator.getUUID(), LanPauseNet.CHOICE_RESUME);
+        ticksRemaining = computeVoteTicks(cfg, onlineCount());
+
+        // Game is already frozen from being paused; it stays frozen while the resume vote runs.
+        if (!evaluate()) broadcastDialog();
+    }
+
     /** A vote button was clicked (routed here from the custom-click-action mixin). */
     public void onVote(ServerPlayer voter, String choice)
     {
-        if (phase == PausePhase.RUNNING) return;
+        if (LanPauseNet.CHOICE_START_RESUME.equals(choice)) { startResumeVote(voter); return; }
+
+        if (phase != PausePhase.VOTING) return;
         if (!LanPauseNet.CHOICE_PAUSE.equals(choice) && !LanPauseNet.CHOICE_RESUME.equals(choice)) return;
 
         votes.put(voter.getUUID(), choice);
         if (!evaluate()) broadcastDialog();
     }
 
-    /** Server tick: only the initial vote is timed. */
+    /** Server tick: any vote in progress (pause or resume) is timed and resolves when it expires. */
     public void tick()
     {
         if (phase != PausePhase.VOTING) return;
@@ -122,18 +152,22 @@ public final class PauseManager
      */
     private boolean evaluate()
     {
+        if (phase != PausePhase.VOTING) return false;
+
         int online = onlineCount();
         int needed = neededVotes(online);
 
-        if (phase == PausePhase.VOTING)
-        {
-            if (count(LanPauseNet.CHOICE_PAUSE) >= needed) { commitPaused(); return true; }
-            if (online > 0 && votes.size() >= online) { resolveByMajority(); return true; }
-        }
-        else if (phase == PausePhase.PAUSED)
+        // The side that started the vote wins as soon as it reaches the threshold; a resume vote
+        // is the mirror of a pause vote.
+        if (resumeVote)
         {
             if (count(LanPauseNet.CHOICE_RESUME) >= needed) { resume(); return true; }
         }
+        else
+        {
+            if (count(LanPauseNet.CHOICE_PAUSE) >= needed) { commitPaused(); return true; }
+        }
+        if (online > 0 && votes.size() >= online) { resolveByMajority(); return true; }
         return false;
     }
 
@@ -228,42 +262,75 @@ public final class PauseManager
     private Dialog voteDialog()
     {
         int secondsLeft = (ticksRemaining + 19) / 20;
-        Component prompt = Component.literal(initiatorName + " voted to pause the game. Vote your decision:");
-        Component counts = Component.literal(
-            "Votes  —  Pause: " + count(LanPauseNet.CHOICE_PAUSE)
-                + "   Don't Pause: " + count(LanPauseNet.CHOICE_RESUME)
-                + "   (" + secondsLeft + "s left)");
+        Component prompt = Component.literal(resumeVote
+            ? initiatorName + " started a vote to resume the game."
+            : initiatorName + " started a vote to pause the game.");
+        Component time = Component.literal("Time left: " + secondsLeft + "s");
+
+        List<DialogBody> body = List.of(
+            new PlainMessage(prompt, PlainMessage.DEFAULT_WIDTH),
+            new PlainMessage(time, PlainMessage.DEFAULT_WIDTH),
+            votesTable());
 
         ActionButton pauseBtn = voteButton("Pause", LanPauseNet.CHOICE_PAUSE);
-        ActionButton resumeBtn = voteButton("Don't Pause", LanPauseNet.CHOICE_RESUME);
-        return new ConfirmationDialog(commonData(Component.literal("LAN Pause"), prompt, counts), pauseBtn, resumeBtn);
+        ActionButton resumeBtn = voteButton("Resume", LanPauseNet.CHOICE_RESUME);
+        return new ConfirmationDialog(commonData(Component.literal("LAN Pause"), body), pauseBtn, resumeBtn);
     }
 
     private Dialog pausedDialog()
     {
-        Component prompt = Component.literal("The game is paused. Vote to unpause:");
-        Component counts = Component.literal(
-            "Votes  —  Unpause: " + count(LanPauseNet.CHOICE_RESUME)
-                + "   Keep Paused: " + count(LanPauseNet.CHOICE_PAUSE));
+        List<DialogBody> body = List.of(
+            new PlainMessage(Component.literal("Paused"), PlainMessage.DEFAULT_WIDTH),
+            votesTable());
 
-        ActionButton unpauseBtn = voteButton("Unpause", LanPauseNet.CHOICE_RESUME);
-        ActionButton keepBtn = voteButton("Keep Paused", LanPauseNet.CHOICE_PAUSE);
-        return new ConfirmationDialog(commonData(Component.literal("Game Paused"), prompt, counts), unpauseBtn, keepBtn);
+        return new NoticeDialog(commonData(Component.literal("Game Paused"), body), startResumeButton());
     }
 
-    private static CommonDialogData commonData(Component title, Component prompt, Component counts)
+    /** The two-column vote table shared by both dialogs: player heads of who voted each way. */
+    private VotesBody votesTable()
     {
-        List<DialogBody> body = List.of(
-            new PlainMessage(prompt, PlainMessage.DEFAULT_WIDTH),
-            new PlainMessage(counts, PlainMessage.DEFAULT_WIDTH));
+        List<ItemStackTemplate> pauseHeads = headsFor(LanPauseNet.CHOICE_PAUSE);
+        List<ItemStackTemplate> resumeHeads = headsFor(LanPauseNet.CHOICE_RESUME);
+        return new VotesBody(
+            Component.literal("Pause: " + pauseHeads.size()), pauseHeads,
+            Component.literal("Resume: " + resumeHeads.size()), resumeHeads,
+            20);
+    }
+
+    private List<ItemStackTemplate> headsFor(String choice)
+    {
+        List<ItemStackTemplate> heads = new ArrayList<>();
+        for (ServerPlayer p : players())
+        {
+            if (choice.equals(votes.get(p.getUUID()))) heads.add(head(p));
+        }
+        return heads;
+    }
+
+    /** A player_head item carrying the player's profile (renders their face) and name (tooltip). */
+    private static ItemStackTemplate head(ServerPlayer player)
+    {
+        ItemStack stack = new ItemStack(Items.PLAYER_HEAD);
+        stack.set(DataComponents.PROFILE, ResolvableProfile.createResolved(player.getGameProfile()));
+        stack.set(DataComponents.CUSTOM_NAME, player.getName());
+        return ItemStackTemplate.fromStack(stack);
+    }
+
+    private static CommonDialogData commonData(Component title, List<DialogBody> body)
+    {
         return new CommonDialogData(
             title,
             Optional.empty(),
             false,               // canCloseWithEscape: lock players to the dialog
             false,               // pause: we run our own tick-freeze, not the dialog's
-            DialogAction.NONE,   // keep the dialog open after a vote so counts can refresh
+            DialogAction.NONE,   // keep the dialog open after a click so the server can refresh it
             body,
             List.of());
+    }
+
+    private static ActionButton startResumeButton()
+    {
+        return voteButton("Start Resume Vote", LanPauseNet.CHOICE_START_RESUME);
     }
 
     private static ActionButton voteButton(String label, String choice)
